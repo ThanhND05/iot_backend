@@ -21,4 +21,7 @@ public interface ActionRepository extends JpaRepository<Action, Integer> {
             @Param("startTime") LocalDateTime startTime,
             @Param("endTime") LocalDateTime endTime,
             Pageable pageable);
+
+    java.util.Optional<Action> findFirstByDeviceIdOrderByCreatedAtDesc(Integer deviceId);
 }
+

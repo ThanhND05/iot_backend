@@ -15,6 +15,8 @@ import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.MessageHandler;
 import org.springframework.beans.factory.annotation.Value;
 
+import org.springframework.integration.annotation.IntegrationComponentScan;
+
 @Configuration
 public class MqttConfig {
 
@@ -35,30 +37,33 @@ public class MqttConfig {
     }
 
     @Bean
-    public MessageChannel mqttInputChannel() {
-        return new DirectChannel();
+    public MessageChannel mqttInputChannel(edu.ptit.iot.mqtt.MqttMessageHandler handler) {
+        DirectChannel channel = new DirectChannel();
+        channel.subscribe(handler::handleMessage);
+        return channel;
     }
 
     @Bean
-    public MessageProducer inbound() {
+    public MessageProducer inbound(MessageChannel mqttInputChannel) {
         MqttPahoMessageDrivenChannelAdapter adapter =
                 new MqttPahoMessageDrivenChannelAdapter(clientId + "_in", mqttClientFactory(),
-                        "iot/sensors/data", "iot/devices/+/action/status");
+                        "iot/sensors/data", "iot/devices/+/status", "iot/devices/+/action/status");
         adapter.setCompletionTimeout(5000);
         adapter.setConverter(new DefaultPahoMessageConverter());
         adapter.setQos(1);
-        adapter.setOutputChannel(mqttInputChannel());
+        adapter.setOutputChannel(mqttInputChannel);
         return adapter;
     }
 
     @Bean
-    public MessageChannel mqttOutboundChannel() {
-        return new DirectChannel();
+    public MessageChannel mqttOutboundChannel(MqttPahoMessageHandler mqttOutboundHandler) {
+        DirectChannel channel = new DirectChannel();
+        channel.subscribe(mqttOutboundHandler);
+        return channel;
     }
 
     @Bean
-    @ServiceActivator(inputChannel = "mqttOutboundChannel")
-    public MessageHandler mqttOutbound() {
+    public MqttPahoMessageHandler mqttOutboundHandler() {
         MqttPahoMessageHandler messageHandler =
                 new MqttPahoMessageHandler(clientId + "_out", mqttClientFactory());
         messageHandler.setAsync(true);

@@ -22,26 +22,28 @@ import java.time.format.DateTimeFormatter;
 @RequiredArgsConstructor
 public class MqttMessageHandler {
 
-    private final ObjectMapper objectMapper;
+    private final ObjectMapper objectMapper = new ObjectMapper();
     private final SensorRepository sensorRepository;
     private final DataSensorRepository dataSensorRepository;
     private final ActionService actionService;
     private final SimpMessagingTemplate messagingTemplate;
 
-    @ServiceActivator(inputChannel = "mqttInputChannel")
     public void handleMessage(Message<?> message) {
         String topic = message.getHeaders().get(MqttHeaders.RECEIVED_TOPIC).toString();
         String payload = message.getPayload().toString();
+
+        System.out.println(">>> [MQTT RECEIVED] Topic: " + topic + " | Payload: " + payload);
 
         try {
             JsonNode jsonNode = objectMapper.readTree(payload);
 
             if ("iot/sensors/data".equals(topic)) {
                 handleSensorData(jsonNode);
-            } else if (topic.startsWith("iot/devices/") && topic.endsWith("/action/status")) {
+            } else if (topic.startsWith("iot/devices/") && (topic.endsWith("/status") || topic.endsWith("/action/status"))) {
                 handleActionStatus(jsonNode);
             }
         } catch (Exception e) {
+            System.err.println(">>> [MQTT ERROR] Parsing failed for payload: " + payload);
             e.printStackTrace();
         }
     }
@@ -68,6 +70,7 @@ public class MqttMessageHandler {
                 .build();
                 
         messagingTemplate.convertAndSend("/topic/sensors", response);
+        System.out.println(">>> [SENSOR SAVED & WS SENT] Temp: " + temperature + "°C | Hum: " + humidity + "% | Light: " + light);
     }
 
     private void saveSensorData(String sensorName, String value, LocalDateTime timestamp) {
@@ -91,6 +94,7 @@ public class MqttMessageHandler {
             String status = jsonNode.get("status").asText();
 
             actionService.updateActionStatus(actionId, deviceId, status);
+            System.out.println(">>> [ACTION STATUS UPDATED] ActionId: " + actionId + " | DeviceId: " + deviceId + " | Status: " + status);
         }
     }
 }

@@ -7,7 +7,11 @@ import edu.ptit.iot.entity.Action;
 import edu.ptit.iot.entity.Device;
 import edu.ptit.iot.entity.User;
 import edu.ptit.iot.exception.ResourceNotFoundException;
-import edu.ptit.iot.mqtt.MqttGateway;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.messaging.Message;
+import org.springframework.messaging.MessageChannel;
+import org.springframework.messaging.support.MessageBuilder;
+import org.springframework.integration.mqtt.support.MqttHeaders;
 import edu.ptit.iot.repository.ActionRepository;
 import edu.ptit.iot.repository.DeviceRepository;
 import edu.ptit.iot.repository.UserRepository;
@@ -37,7 +41,8 @@ public class ActionServiceImpl implements ActionService {
     private final ActionRepository actionRepository;
     private final DeviceRepository deviceRepository;
     private final UserRepository userRepository;
-    private final MqttGateway mqttGateway;
+    @Qualifier("mqttOutboundChannel")
+    private final MessageChannel mqttOutboundChannel;
     private final SimpMessagingTemplate messagingTemplate;
 
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(10);
@@ -62,7 +67,10 @@ public class ActionServiceImpl implements ActionService {
         String topic = "iot/devices/" + deviceId + "/action";
         String message = String.format("{\"actionId\": %d, \"deviceId\": %d, \"action\": \"%s\"}", 
                 savedAction.getId(), deviceId, request.getAction());
-        mqttGateway.sendToMqtt(message, topic);
+        Message<String> mqttMessage = MessageBuilder.withPayload(message)
+                .setHeader(MqttHeaders.TOPIC, topic)
+                .build();
+        mqttOutboundChannel.send(mqttMessage);
 
         // Schedule timeout check
         scheduler.schedule(() -> checkTimeout(savedAction.getId(), deviceId), 5, TimeUnit.SECONDS);

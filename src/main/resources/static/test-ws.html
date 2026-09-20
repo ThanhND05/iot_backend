@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Test WebSocket STOMP</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sockjs-client/1.5.1/sockjs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        #messages { background: #f4f4f4; padding: 10px; height: 300px; overflow-y: scroll; border: 1px solid #ccc; }
+        .msg { padding: 5px; border-bottom: 1px solid #ddd; }
+    </style>
+</head>
+<body>
+    <h2>WebSocket STOMP Tester</h2>
+    <p>Trạng thái: <span id="status" style="color: red; font-weight: bold;">Đang ngắt kết nối</span></p>
+    <div id="messages"></div>
+
+    <script>
+        var stompClient = null;
+        var messageDiv = document.getElementById('messages');
+        var statusSpan = document.getElementById('status');
+
+        function connect() {
+            // Kết nối tới endpoint websocket của backend
+            var socket = new SockJS('http://localhost:8080/ws/sensors');
+            stompClient = Stomp.over(socket);
+            
+            stompClient.connect({}, function (frame) {
+                statusSpan.innerText = "Đã kết nối thành công!";
+                statusSpan.style.color = "green";
+                console.log('Connected: ' + frame);
+                
+                // Đăng ký nhận tin nhắn từ topic
+                stompClient.subscribe('/topic/sensors', function (response) {
+                    var data = JSON.parse(response.body);
+                    var p = document.createElement('p');
+                    p.className = 'msg';
+                    p.innerHTML = `<strong>Data nhận được:</strong> Nhiệt độ: ${data.temperature}°C, Độ ẩm: ${data.humidity}%, Ánh sáng: ${data.light}`;
+                    messageDiv.prepend(p); // Thêm lên đầu danh sách
+                });
+            }, function(error) {
+                statusSpan.innerText = "Lỗi kết nối!";
+                statusSpan.style.color = "red";
+                console.error(error);
+            });
+        }
+
+        // Tự động kết nối khi mở trang
+        connect();
+    </script>
+</body>
+</html>
