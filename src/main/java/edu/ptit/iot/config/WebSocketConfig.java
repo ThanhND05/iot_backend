@@ -18,11 +18,8 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
+        // SockJS endpoints - used by the frontend @stomp/stompjs client
         registry.addEndpoint("/ws/sensors").setAllowedOriginPatterns("*").withSockJS();
         registry.addEndpoint("/ws/devices").setAllowedOriginPatterns("*").withSockJS();
-        
-        // Also allow without SockJS for testing
-        registry.addEndpoint("/ws/sensors").setAllowedOriginPatterns("*");
-        registry.addEndpoint("/ws/devices").setAllowedOriginPatterns("*");
     }
 }

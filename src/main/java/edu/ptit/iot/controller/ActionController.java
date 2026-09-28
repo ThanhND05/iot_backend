@@ -21,9 +21,12 @@ public class ActionController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size,
             @RequestParam(required = false) String device,
+            @RequestParam(required = false) String action,
+            @RequestParam(required = false) String status,
             @RequestParam(required = false) String time) {
-        
-        PageResponse<ActionResponse> data = actionService.searchActions(page, size, device, time);
+
+        PageResponse<ActionResponse> data = actionService.searchActions(page, size, device, action, status, time);
+
         return ResponseEntity.ok(ApiResponse.<PageResponse<ActionResponse>>builder()
                 .success(true)
                 .message("Actions fetched successfully!")
