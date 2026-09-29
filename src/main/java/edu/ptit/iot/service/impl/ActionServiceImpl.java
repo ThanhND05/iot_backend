@@ -66,6 +66,19 @@ public class ActionServiceImpl implements ActionService {
     private static final Pattern DD_MM_YYYY_TIME = Pattern
             .compile("^(\\d{1,2})[-/](\\d{1,2})[-/](\\d{4})[ T](\\d{1,2}):(\\d{2})(?::(\\d{2}))?$");
 
+    // date + hour only (no minute) — e.g. "29/09/2026 15" or "2026-09-29 15"
+    private static final Pattern YYYY_MM_DD_HOUR = Pattern
+            .compile("^(\\d{4})[-/](\\d{1,2})[-/](\\d{1,2})[ T](\\d{1,2})$");
+
+    private static final Pattern DD_MM_YYYY_HOUR = Pattern
+            .compile("^(\\d{1,2})[-/](\\d{1,2})[-/](\\d{4})[ T](\\d{1,2})$");
+
+    // 4-digit year only — e.g. "2026"
+    private static final Pattern YEAR_ONLY = Pattern.compile("^(\\d{4})$");
+
+    // 1–2 digit day of month — e.g. "29"
+    private static final Pattern DAY_ONLY = Pattern.compile("^(\\d{1,2})$");
+
     private final ActionRepository actionRepository;
     private final DeviceRepository deviceRepository;
     private final UserRepository userRepository;
@@ -397,6 +410,49 @@ public class ActionServiceImpl implements ActionService {
                                 month));
             }
 
+            // yyyy-MM-dd HH (date + hour, no minute)
+            matcher = YYYY_MM_DD_HOUR.matcher(search);
+            if (matcher.matches()) {
+                LocalDate date = LocalDate.of(
+                        Integer.parseInt(matcher.group(1)),
+                        Integer.parseInt(matcher.group(2)),
+                        Integer.parseInt(matcher.group(3)));
+                int hour = Integer.parseInt(matcher.group(4));
+                if (hour > 23) return null;
+                return buildHourRange(createdAt, cb, date, hour);
+            }
+
+            // dd/MM/yyyy HH (date + hour, no minute)
+            matcher = DD_MM_YYYY_HOUR.matcher(search);
+            if (matcher.matches()) {
+                LocalDate date = LocalDate.of(
+                        Integer.parseInt(matcher.group(3)),
+                        Integer.parseInt(matcher.group(2)),
+                        Integer.parseInt(matcher.group(1)));
+                int hour = Integer.parseInt(matcher.group(4));
+                if (hour > 23) return null;
+                return buildHourRange(createdAt, cb, date, hour);
+            }
+
+            // 4-digit year only — e.g. "2026"
+            matcher = YEAR_ONLY.matcher(search);
+            if (matcher.matches()) {
+                int year = Integer.parseInt(matcher.group(1));
+                return cb.equal(
+                        cb.function("year", Integer.class, createdAt),
+                        year);
+            }
+
+            // 1–2 digit day of month — e.g. "29"
+            matcher = DAY_ONLY.matcher(search);
+            if (matcher.matches()) {
+                int day = Integer.parseInt(matcher.group(1));
+                if (day < 1 || day > 31) return null;
+                return cb.equal(
+                        cb.function("day", Integer.class, createdAt),
+                        day);
+            }
+
             return null;
         } catch (NumberFormatException | DateTimeException ignored) {
             return null;
@@ -409,6 +465,19 @@ public class ActionServiceImpl implements ActionService {
             LocalDate date) {
         LocalDateTime start = date.atStartOfDay();
         LocalDateTime end = date.plusDays(1).atStartOfDay();
+
+        return cb.and(
+                cb.greaterThanOrEqualTo(createdAt, start),
+                cb.lessThan(createdAt, end));
+    }
+
+    private Predicate buildHourRange(
+            Path<LocalDateTime> createdAt,
+            CriteriaBuilder cb,
+            LocalDate date,
+            int hour) {
+        LocalDateTime start = date.atTime(hour, 0, 0);
+        LocalDateTime end = start.plusHours(1);
 
         return cb.and(
                 cb.greaterThanOrEqualTo(createdAt, start),
