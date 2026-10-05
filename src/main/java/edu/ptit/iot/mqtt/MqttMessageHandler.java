@@ -39,7 +39,7 @@ public class MqttMessageHandler {
 
             if ("iot/sensors/data".equals(topic)) {
                 handleSensorData(jsonNode);
-            } else if (topic.startsWith("iot/devices/") && (topic.endsWith("/status") || topic.endsWith("/action/status"))) {
+            } else if (topic.startsWith("iot/devices/") && topic.endsWith("/status")) {
                 handleActionStatus(jsonNode);
             }
         } catch (Exception e) {

@@ -47,7 +47,7 @@ public class MqttConfig {
     public MessageProducer inbound(MessageChannel mqttInputChannel) {
         MqttPahoMessageDrivenChannelAdapter adapter =
                 new MqttPahoMessageDrivenChannelAdapter(clientId + "_in", mqttClientFactory(),
-                        "iot/sensors/data", "iot/devices/+/status", "iot/devices/+/action/status");
+                        "iot/sensors/data", "iot/devices/+/status");
         adapter.setCompletionTimeout(5000);
         adapter.setConverter(new DefaultPahoMessageConverter());
         adapter.setQos(1);

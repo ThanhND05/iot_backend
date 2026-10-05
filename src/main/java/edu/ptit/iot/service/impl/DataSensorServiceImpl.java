@@ -100,9 +100,9 @@ public class DataSensorServiceImpl implements DataSensorService {
 
     @Override
     public List<LatestDataSensorResponse> getChartData() {
-        List<DataSensor> temps = findLatest("temperature", 10);
-        List<DataSensor> hums = findLatest("humidity", 10);
-        List<DataSensor> lights = findLatest("light", 10);
+        List<DataSensor> temps = findLatest("temperature", 12);
+        List<DataSensor> hums = findLatest("humidity", 12);
+        List<DataSensor> lights = findLatest("light", 12);
 
         List<LatestDataSensorResponse> responses = new ArrayList<>();
         int maxSize = Math.max(Math.max(temps.size(), hums.size()), lights.size());
@@ -150,14 +150,14 @@ public class DataSensorServiceImpl implements DataSensorService {
             int size,
             String type,
             String search,
+            String time,
             String searchMode) {
         int safePage = Math.max(page, 0);
         int safeSize = Math.min(Math.max(size, 1), MAX_PAGE_SIZE);
 
         String safeType = type == null || type.isBlank() ? "All" : type.trim();
-
         String safeSearch = search == null ? "" : search.trim();
-
+        String safeTime = time == null ? "" : time.trim();
         String safeMode = searchMode == null || searchMode.isBlank()
                 ? "ALL"
                 : searchMode.trim().toUpperCase(Locale.ROOT);
@@ -167,7 +167,7 @@ public class DataSensorServiceImpl implements DataSensorService {
                 safeSize,
                 Sort.by("createdAt").descending());
 
-        Specification<DataSensor> specification = buildSearchSpecification(safeType, safeSearch, safeMode);
+        Specification<DataSensor> specification = buildSearchSpecification(safeType, safeSearch, safeTime, safeMode);
 
         Page<DataSensor> dataPage = dataSensorRepository.findAll(specification, pageable);
 
@@ -188,6 +188,7 @@ public class DataSensorServiceImpl implements DataSensorService {
     private Specification<DataSensor> buildSearchSpecification(
             String sensorType,
             String search,
+            String time,
             String searchMode) {
         return (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
@@ -195,37 +196,43 @@ public class DataSensorServiceImpl implements DataSensorService {
             if (!"All".equalsIgnoreCase(sensorType)) {
                 predicates.add(
                         cb.equal(
-                                root.get("sensor").get("name"),
-                                sensorType));
+                                cb.lower(root.get("sensor").get("name")),
+                                sensorType.toLowerCase(Locale.ROOT)));
             }
 
-            if (search == null || search.isBlank()) {
-                return predicates.isEmpty()
-                        ? cb.conjunction()
-                        : cb.and(predicates.toArray(new Predicate[0]));
+            // Nếu có param time cụ thể
+            if (time != null && !time.isBlank()) {
+                Predicate timePredicate = buildTimePredicate(root.get("createdAt"), cb, time);
+                predicates.add(timePredicate != null ? timePredicate : cb.disjunction());
             }
 
-            Predicate timePredicate = buildTimePredicate(root.get("createdAt"), cb, search);
+            // Nếu có param search (giá trị cảm biến hoặc từ khóa thời gian tự do)
+            if (search != null && !search.isBlank()) {
+                if (time != null && !time.isBlank()) {
+                    // Khi đã có time riêng, search đóng vai trò tìm theo giá trị cảm biến
+                    String valueKeyword = normalizeValueKeyword(search);
+                    predicates.add(cb.like(
+                            cb.lower(root.get("value")),
+                            valueKeyword.toLowerCase(Locale.ROOT) + "%"));
+                } else if ("TIME".equalsIgnoreCase(searchMode)) {
+                    Predicate searchTimePredicate = buildTimePredicate(root.get("createdAt"), cb, search);
+                    predicates.add(searchTimePredicate != null ? searchTimePredicate : cb.disjunction());
+                } else {
+                    Predicate searchTimePredicate = buildTimePredicate(root.get("createdAt"), cb, search);
+                    String valueKeyword = normalizeValueKeyword(search);
+                    Predicate valuePredicate = cb.like(
+                            cb.lower(root.get("value")),
+                            valueKeyword.toLowerCase(Locale.ROOT) + "%");
 
-            if ("TIME".equalsIgnoreCase(searchMode)) {
-                predicates.add(
-                        timePredicate != null
-                                ? timePredicate
-                                : cb.disjunction());
-            } else {
-                String valueKeyword = normalizeValueKeyword(search);
-
-                Predicate valuePredicate = cb.like(
-                        cb.lower(root.get("value")),
-                        valueKeyword.toLowerCase(Locale.ROOT) + "%");
-
-                predicates.add(
-                        timePredicate != null
-                                ? cb.or(valuePredicate, timePredicate)
-                                : valuePredicate);
+                    predicates.add(searchTimePredicate != null
+                            ? cb.or(valuePredicate, searchTimePredicate)
+                            : valuePredicate);
+                }
             }
 
-            return cb.and(predicates.toArray(new Predicate[0]));
+            return predicates.isEmpty()
+                    ? cb.conjunction()
+                    : cb.and(predicates.toArray(new Predicate[0]));
         };
     }
 

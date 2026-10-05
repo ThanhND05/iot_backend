@@ -16,5 +16,6 @@ public interface DataSensorService {
             int size,
             String type,
             String search,
+            String time,
             String searchMode);
 }

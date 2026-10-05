@@ -88,10 +88,10 @@ ActionServiceImpl.performAction()
 ESP8266
   │  subscribe topic: iot/devices/{id}/action
   │  thực thi bật/tắt LED thật
-  │  publish topic: iot/devices/{id}/status hoặc iot/devices/{id}/action/status
+  │  publish topic: iot/devices/{id}/status
   │  payload: { "actionId": X, "deviceId": Y, "status": "SUCCESS" }
   ▼
-MqttConfig.inbound() — subscribe: iot/devices/+/status, iot/devices/+/action/status
+MqttConfig.inbound() — subscribe: iot/devices/+/status
   │
   ▼
 MqttMessageHandler.handleActionStatus()
@@ -242,7 +242,6 @@ websocketService (singleton, khởi tạo khi app load)
 | `iot/sensors/data` | ESP → Backend | `{temperature, humidity, light, timestamp}` |
 | `iot/devices/{id}/action` | Backend → ESP | `{actionId, deviceId, action}` |
 | `iot/devices/{id}/status` | ESP → Backend | `{actionId, deviceId, status}` |
-| `iot/devices/{id}/action/status` | ESP → Backend | (cùng format, topic phụ) |
 
 ## 9. Bảng WebSocket topic (STOMP)
 

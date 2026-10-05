@@ -44,11 +44,12 @@ public class DataSensorController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size,
             @RequestParam(required = false, defaultValue = "All") String type,
+            @RequestParam(required = false) String time,
             @RequestParam(required = false) String search,
             @RequestParam(required = false, defaultValue = "ALL") String searchMode) {
 
         PageResponse<DataSensorResponse> data = dataSensorService.searchDataSensors(page, size, type, search,
-                searchMode);
+                time, searchMode);
 
         return ResponseEntity.ok(ApiResponse.<PageResponse<DataSensorResponse>>builder()
                 .success(true)
