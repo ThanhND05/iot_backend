@@ -12,6 +12,7 @@ import edu.ptit.iot.repository.DeviceRepository;
 import edu.ptit.iot.repository.UserRepository;
 import edu.ptit.iot.service.ActionService;
 import jakarta.persistence.criteria.CriteriaBuilder;
+import jakarta.persistence.criteria.Expression;
 import jakarta.persistence.criteria.Path;
 import jakarta.persistence.criteria.Predicate;
 import lombok.RequiredArgsConstructor;
@@ -48,9 +49,11 @@ public class ActionServiceImpl implements ActionService {
 
     private static final int MAX_PAGE_SIZE = 100;
 
-    private static final Pattern YYYY_MM_DD = Pattern.compile("^(\\d{4})[-/](\\d{1,2})[-/](\\d{1,2})$");
+    private static final Pattern YYYY_MM_DD_PREFIX = Pattern
+            .compile("^(\\d{4})[-/](\\d{1,2})[-/](\\d{1,2})(?:[ T](.+))?$");
 
-    private static final Pattern DD_MM_YYYY = Pattern.compile("^(\\d{1,2})[-/](\\d{1,2})[-/](\\d{4})$");
+    private static final Pattern DD_MM_YYYY_PREFIX = Pattern
+            .compile("^(\\d{1,2})[-/](\\d{1,2})[-/](\\d{4})(?:[ T](.+))?$");
 
     private static final Pattern YYYY_MM = Pattern.compile("^(\\d{4})[-/](\\d{1,2})$");
 
@@ -58,26 +61,21 @@ public class ActionServiceImpl implements ActionService {
 
     private static final Pattern DD_MM = Pattern.compile("^(\\d{1,2})[-/](\\d{1,2})$");
 
-    private static final Pattern HH_MM_SS = Pattern.compile("^(\\d{1,2}):(\\d{2})(?::(\\d{2}))?$");
-
-    private static final Pattern YYYY_MM_DD_TIME = Pattern
-            .compile("^(\\d{4})[-/](\\d{1,2})[-/](\\d{1,2})[ T](\\d{1,2}):(\\d{2})(?::(\\d{2}))?$");
-
-    private static final Pattern DD_MM_YYYY_TIME = Pattern
-            .compile("^(\\d{1,2})[-/](\\d{1,2})[-/](\\d{4})[ T](\\d{1,2}):(\\d{2})(?::(\\d{2}))?$");
-
-    // date + hour only (no minute) — e.g. "29/09/2026 15" or "2026-09-29 15"
-    private static final Pattern YYYY_MM_DD_HOUR = Pattern
-            .compile("^(\\d{4})[-/](\\d{1,2})[-/](\\d{1,2})[ T](\\d{1,2})$");
-
-    private static final Pattern DD_MM_YYYY_HOUR = Pattern
-            .compile("^(\\d{1,2})[-/](\\d{1,2})[-/](\\d{4})[ T](\\d{1,2})$");
-
-    // 4-digit year only — e.g. "2026"
     private static final Pattern YEAR_ONLY = Pattern.compile("^(\\d{4})$");
 
-    // 1–2 digit day of month — e.g. "29"
-    private static final Pattern DAY_ONLY = Pattern.compile("^(\\d{1,2})$");
+    private static final Pattern HH_MM_SS_EXACT = Pattern.compile("^(\\d{1,2}):(\\d{2}):(\\d{2})$");
+
+    private static final Pattern HH_MM_S_PREFIX = Pattern.compile("^(\\d{1,2}):(\\d{2}):([0-5])$");
+
+    private static final Pattern HH_MM_PREFIX = Pattern.compile("^(\\d{1,2}):(\\d{2}):?$");
+
+    private static final Pattern HH_M_PREFIX = Pattern.compile("^(\\d{1,2}):([0-5]):?$");
+
+    private static final Pattern HH_COLON = Pattern.compile("^(\\d{1,2}):$");
+
+    private static final Pattern HH_OR_HH_COLON = Pattern.compile("^(\\d{1,2}):?$");
+
+    private static final Pattern DAY_OR_HOUR_ONLY = Pattern.compile("^(\\d{1,2})$");
 
     private final ActionRepository actionRepository;
     private final DeviceRepository deviceRepository;
@@ -271,61 +269,27 @@ public class ActionServiceImpl implements ActionService {
         try {
             Matcher matcher;
 
-            // yyyy-MM-dd HH:mm[:ss]
-            matcher = YYYY_MM_DD_TIME.matcher(search);
-            if (matcher.matches()) {
-                return buildDateTimeRange(
-                        createdAt,
-                        cb,
-                        Integer.parseInt(matcher.group(1)),
-                        Integer.parseInt(matcher.group(2)),
-                        Integer.parseInt(matcher.group(3)),
-                        Integer.parseInt(matcher.group(4)),
-                        Integer.parseInt(matcher.group(5)),
-                        matcher.group(6) == null
-                                ? null
-                                : Integer.parseInt(matcher.group(6)));
-            }
-
-            // dd/MM/yyyy HH:mm[:ss]
-            matcher = DD_MM_YYYY_TIME.matcher(search);
-            if (matcher.matches()) {
-                return buildDateTimeRange(
-                        createdAt,
-                        cb,
-                        Integer.parseInt(matcher.group(3)),
-                        Integer.parseInt(matcher.group(2)),
-                        Integer.parseInt(matcher.group(1)),
-                        Integer.parseInt(matcher.group(4)),
-                        Integer.parseInt(matcher.group(5)),
-                        matcher.group(6) == null
-                                ? null
-                                : Integer.parseInt(matcher.group(6)));
-            }
-
-            // yyyy-MM-dd
-            matcher = YYYY_MM_DD.matcher(search);
+            // 1. yyyy-MM-dd [time]
+            matcher = YYYY_MM_DD_PREFIX.matcher(search);
             if (matcher.matches()) {
                 LocalDate date = LocalDate.of(
                         Integer.parseInt(matcher.group(1)),
                         Integer.parseInt(matcher.group(2)),
                         Integer.parseInt(matcher.group(3)));
-
-                return buildDayRange(createdAt, cb, date);
+                return buildDateAndPartialTimePredicate(createdAt, cb, date, matcher.group(4));
             }
 
-            // dd/MM/yyyy hoặc dd-MM-yyyy
-            matcher = DD_MM_YYYY.matcher(search);
+            // 2. dd/MM/yyyy [time]
+            matcher = DD_MM_YYYY_PREFIX.matcher(search);
             if (matcher.matches()) {
                 LocalDate date = LocalDate.of(
                         Integer.parseInt(matcher.group(3)),
                         Integer.parseInt(matcher.group(2)),
                         Integer.parseInt(matcher.group(1)));
-
-                return buildDayRange(createdAt, cb, date);
+                return buildDateAndPartialTimePredicate(createdAt, cb, date, matcher.group(4));
             }
 
-            // yyyy-MM
+            // 3. yyyy-MM
             matcher = YYYY_MM.matcher(search);
             if (matcher.matches()) {
                 YearMonth yearMonth = YearMonth.of(
@@ -340,7 +304,7 @@ public class ActionServiceImpl implements ActionService {
                         cb.lessThan(createdAt, end));
             }
 
-            // MM/yyyy
+            // 4. MM/yyyy
             matcher = MM_YYYY.matcher(search);
             if (matcher.matches()) {
                 YearMonth yearMonth = YearMonth.of(
@@ -355,102 +319,47 @@ public class ActionServiceImpl implements ActionService {
                         cb.lessThan(createdAt, end));
             }
 
-            // HH:mm hoặc HH:mm:ss trên mọi ngày.
-            matcher = HH_MM_SS.matcher(search);
-            if (matcher.matches()) {
-                int hour = Integer.parseInt(matcher.group(1));
-                int minute = Integer.parseInt(matcher.group(2));
-
-                if (hour > 23 || minute > 59) {
-                    return null;
-                }
-
-                List<Predicate> timeParts = new ArrayList<>();
-
-                timeParts.add(
-                        cb.equal(
-                                cb.function("hour", Integer.class, createdAt),
-                                hour));
-
-                timeParts.add(
-                        cb.equal(
-                                cb.function("minute", Integer.class, createdAt),
-                                minute));
-
-                if (matcher.group(3) != null) {
-                    int second = Integer.parseInt(matcher.group(3));
-
-                    if (second > 59) {
-                        return null;
-                    }
-
-                    timeParts.add(
-                            cb.equal(
-                                    cb.function("second", Integer.class, createdAt),
-                                    second));
-                }
-
-                return cb.and(timeParts.toArray(new Predicate[0]));
+            // 5. Standalone partial / full time patterns:
+            // "16:50:35", "16:50:3", "16:50", "16:50:", "16:5", "16:"
+            Predicate timeOnlyPred = buildPartialTimeOnlyPredicate(createdAt, cb, search);
+            if (timeOnlyPred != null) {
+                return timeOnlyPred;
             }
 
-            // dd/MM trên mọi năm.
+            // 6. dd/MM on any year
             matcher = DD_MM.matcher(search);
             if (matcher.matches()) {
                 int day = Integer.parseInt(matcher.group(1));
                 int month = Integer.parseInt(matcher.group(2));
-
                 LocalDate.of(2024, month, day);
 
                 return cb.and(
-                        cb.equal(
-                                cb.function("day", Integer.class, createdAt),
-                                day),
-                        cb.equal(
-                                cb.function("month", Integer.class, createdAt),
-                                month));
+                        cb.equal(cb.function("day", Integer.class, createdAt), day),
+                        cb.equal(cb.function("month", Integer.class, createdAt), month));
             }
 
-            // yyyy-MM-dd HH (date + hour, no minute)
-            matcher = YYYY_MM_DD_HOUR.matcher(search);
-            if (matcher.matches()) {
-                LocalDate date = LocalDate.of(
-                        Integer.parseInt(matcher.group(1)),
-                        Integer.parseInt(matcher.group(2)),
-                        Integer.parseInt(matcher.group(3)));
-                int hour = Integer.parseInt(matcher.group(4));
-                if (hour > 23) return null;
-                return buildHourRange(createdAt, cb, date, hour);
-            }
-
-            // dd/MM/yyyy HH (date + hour, no minute)
-            matcher = DD_MM_YYYY_HOUR.matcher(search);
-            if (matcher.matches()) {
-                LocalDate date = LocalDate.of(
-                        Integer.parseInt(matcher.group(3)),
-                        Integer.parseInt(matcher.group(2)),
-                        Integer.parseInt(matcher.group(1)));
-                int hour = Integer.parseInt(matcher.group(4));
-                if (hour > 23) return null;
-                return buildHourRange(createdAt, cb, date, hour);
-            }
-
-            // 4-digit year only — e.g. "2026"
+            // 7. 4-digit year only — e.g. "2026"
             matcher = YEAR_ONLY.matcher(search);
             if (matcher.matches()) {
                 int year = Integer.parseInt(matcher.group(1));
-                return cb.equal(
-                        cb.function("year", Integer.class, createdAt),
-                        year);
+                return cb.equal(cb.function("year", Integer.class, createdAt), year);
             }
 
-            // 1–2 digit day of month — e.g. "29"
-            matcher = DAY_ONLY.matcher(search);
+            // 8. 1–2 digit day of month or hour of day — e.g. "16", "29", "5"
+            matcher = DAY_OR_HOUR_ONLY.matcher(search);
             if (matcher.matches()) {
-                int day = Integer.parseInt(matcher.group(1));
-                if (day < 1 || day > 31) return null;
-                return cb.equal(
-                        cb.function("day", Integer.class, createdAt),
-                        day);
+                int val = Integer.parseInt(matcher.group(1));
+                List<Predicate> options = new ArrayList<>();
+                if (val >= 1 && val <= 31) {
+                    options.add(cb.equal(cb.function("day", Integer.class, createdAt), val));
+                }
+                if (val >= 0 && val <= 23) {
+                    options.add(cb.equal(cb.function("hour", Integer.class, createdAt), val));
+                }
+                if (!options.isEmpty()) {
+                    return cb.or(options.toArray(new Predicate[0]));
+                }
+                return null;
             }
 
             return null;
@@ -459,51 +368,153 @@ public class ActionServiceImpl implements ActionService {
         }
     }
 
+    private Predicate buildDateAndPartialTimePredicate(
+            Path<LocalDateTime> createdAt,
+            CriteriaBuilder cb,
+            LocalDate date,
+            String timePart) {
+        if (timePart == null || timePart.isBlank()) {
+            return buildDayRange(createdAt, cb, date);
+        }
+        String t = timePart.trim();
+
+        // 1. HH:mm:ss
+        Matcher m = HH_MM_SS_EXACT.matcher(t);
+        if (m.matches()) {
+            int h = Integer.parseInt(m.group(1));
+            int min = Integer.parseInt(m.group(2));
+            int s = Integer.parseInt(m.group(3));
+            if (h > 23 || min > 59 || s > 59) return null;
+            LocalDateTime start = date.atTime(h, min, s);
+            return cb.and(
+                    cb.greaterThanOrEqualTo(createdAt, start),
+                    cb.lessThan(createdAt, start.plusSeconds(1)));
+        }
+
+        // 2. HH:mm:s (second prefix e.g. 16:50:3 -> 30..39)
+        m = HH_MM_S_PREFIX.matcher(t);
+        if (m.matches()) {
+            int h = Integer.parseInt(m.group(1));
+            int min = Integer.parseInt(m.group(2));
+            int sPrefix = Integer.parseInt(m.group(3));
+            if (h > 23 || min > 59) return null;
+            LocalDateTime start = date.atTime(h, min, sPrefix * 10);
+            return cb.and(
+                    cb.greaterThanOrEqualTo(createdAt, start),
+                    cb.lessThan(createdAt, start.plusSeconds(10)));
+        }
+
+        // 3. HH:mm or HH:mm:
+        m = HH_MM_PREFIX.matcher(t);
+        if (m.matches()) {
+            int h = Integer.parseInt(m.group(1));
+            int min = Integer.parseInt(m.group(2));
+            if (h > 23 || min > 59) return null;
+            LocalDateTime start = date.atTime(h, min, 0);
+            return cb.and(
+                    cb.greaterThanOrEqualTo(createdAt, start),
+                    cb.lessThan(createdAt, start.plusMinutes(1)));
+        }
+
+        // 4. HH:m or HH:m: (minute prefix e.g. 16:5 -> 50..59)
+        m = HH_M_PREFIX.matcher(t);
+        if (m.matches()) {
+            int h = Integer.parseInt(m.group(1));
+            int mPrefix = Integer.parseInt(m.group(2));
+            if (h > 23) return null;
+            LocalDateTime start = date.atTime(h, mPrefix * 10, 0);
+            return cb.and(
+                    cb.greaterThanOrEqualTo(createdAt, start),
+                    cb.lessThan(createdAt, start.plusMinutes(10)));
+        }
+
+        // 5. HH or HH:
+        m = HH_OR_HH_COLON.matcher(t);
+        if (m.matches()) {
+            int h = Integer.parseInt(m.group(1));
+            if (h > 23) return null;
+            LocalDateTime start = date.atTime(h, 0, 0);
+            return cb.and(
+                    cb.greaterThanOrEqualTo(createdAt, start),
+                    cb.lessThan(createdAt, start.plusHours(1)));
+        }
+
+        return null;
+    }
+
+    private Predicate buildPartialTimeOnlyPredicate(
+            Path<LocalDateTime> createdAt,
+            CriteriaBuilder cb,
+            String t) {
+        // 1. HH:mm:ss
+        Matcher m = HH_MM_SS_EXACT.matcher(t);
+        if (m.matches()) {
+            int h = Integer.parseInt(m.group(1));
+            int min = Integer.parseInt(m.group(2));
+            int s = Integer.parseInt(m.group(3));
+            if (h > 23 || min > 59 || s > 59) return null;
+            return cb.and(
+                    cb.equal(cb.function("hour", Integer.class, createdAt), h),
+                    cb.equal(cb.function("minute", Integer.class, createdAt), min),
+                    cb.equal(cb.function("second", Integer.class, createdAt), s));
+        }
+
+        // 2. HH:mm:s (second prefix e.g. 16:50:3 -> 30..39)
+        m = HH_MM_S_PREFIX.matcher(t);
+        if (m.matches()) {
+            int h = Integer.parseInt(m.group(1));
+            int min = Integer.parseInt(m.group(2));
+            int sPrefix = Integer.parseInt(m.group(3));
+            if (h > 23 || min > 59) return null;
+            Expression<Integer> secExpr = cb.function("second", Integer.class, createdAt);
+            return cb.and(
+                    cb.equal(cb.function("hour", Integer.class, createdAt), h),
+                    cb.equal(cb.function("minute", Integer.class, createdAt), min),
+                    cb.greaterThanOrEqualTo(secExpr, sPrefix * 10),
+                    cb.lessThanOrEqualTo(secExpr, sPrefix * 10 + 9));
+        }
+
+        // 3. HH:mm or HH:mm: (e.g. 16:50 or 16:50:)
+        m = HH_MM_PREFIX.matcher(t);
+        if (m.matches()) {
+            int h = Integer.parseInt(m.group(1));
+            int min = Integer.parseInt(m.group(2));
+            if (h > 23 || min > 59) return null;
+            return cb.and(
+                    cb.equal(cb.function("hour", Integer.class, createdAt), h),
+                    cb.equal(cb.function("minute", Integer.class, createdAt), min));
+        }
+
+        // 4. HH:m or HH:m: (minute prefix e.g. 16:5 -> 50..59)
+        m = HH_M_PREFIX.matcher(t);
+        if (m.matches()) {
+            int h = Integer.parseInt(m.group(1));
+            int mPrefix = Integer.parseInt(m.group(2));
+            if (h > 23) return null;
+            Expression<Integer> minExpr = cb.function("minute", Integer.class, createdAt);
+            return cb.and(
+                    cb.equal(cb.function("hour", Integer.class, createdAt), h),
+                    cb.greaterThanOrEqualTo(minExpr, mPrefix * 10),
+                    cb.lessThanOrEqualTo(minExpr, mPrefix * 10 + 9));
+        }
+
+        // 5. HH: (hour with colon e.g. 16:)
+        m = HH_COLON.matcher(t);
+        if (m.matches()) {
+            int h = Integer.parseInt(m.group(1));
+            if (h > 23) return null;
+            return cb.equal(cb.function("hour", Integer.class, createdAt), h);
+        }
+
+        return null;
+    }
+
     private Predicate buildDayRange(
             Path<LocalDateTime> createdAt,
             CriteriaBuilder cb,
             LocalDate date) {
         LocalDateTime start = date.atStartOfDay();
         LocalDateTime end = date.plusDays(1).atStartOfDay();
-
-        return cb.and(
-                cb.greaterThanOrEqualTo(createdAt, start),
-                cb.lessThan(createdAt, end));
-    }
-
-    private Predicate buildHourRange(
-            Path<LocalDateTime> createdAt,
-            CriteriaBuilder cb,
-            LocalDate date,
-            int hour) {
-        LocalDateTime start = date.atTime(hour, 0, 0);
-        LocalDateTime end = start.plusHours(1);
-
-        return cb.and(
-                cb.greaterThanOrEqualTo(createdAt, start),
-                cb.lessThan(createdAt, end));
-    }
-
-    private Predicate buildDateTimeRange(
-            Path<LocalDateTime> createdAt,
-            CriteriaBuilder cb,
-            int year,
-            int month,
-            int day,
-            int hour,
-            int minute,
-            Integer second) {
-        LocalDateTime start = LocalDateTime.of(
-                year,
-                month,
-                day,
-                hour,
-                minute,
-                second == null ? 0 : second);
-
-        LocalDateTime end = second == null
-                ? start.plusMinutes(1)
-                : start.plusSeconds(1);
 
         return cb.and(
                 cb.greaterThanOrEqualTo(createdAt, start),

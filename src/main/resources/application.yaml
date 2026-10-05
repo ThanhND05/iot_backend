@@ -6,7 +6,7 @@ spring:
     name: iot
   
   datasource:
-    url: jdbc:mysql://localhost:3306/iot?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
+    url: jdbc:mysql://localhost:3306/iot?createDatabaseIfNotExist=true&useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
     username: root
     password: Thanhmessi
     driver-class-name: com.mysql.cj.jdbc.Driver
@@ -23,3 +23,5 @@ spring:
 mqtt:
   url: tcp://localhost:1884
   client-id: spring-boot-backend
+  username: NguyenDuyThanh
+  password: B23DCCN761
