@@ -28,6 +28,7 @@ import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.DateTimeException;
 import java.time.LocalDate;
@@ -144,6 +145,7 @@ public class ActionServiceImpl implements ActionService {
     }
 
     @Override
+    @Transactional
     public void updateActionStatus(
             Integer actionId,
             Integer deviceId,
